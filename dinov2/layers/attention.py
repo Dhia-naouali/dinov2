@@ -72,10 +72,13 @@ class Attention(nn.Module):
         qkv = self.qkv(x).reshape(
             B, N, 3, self.num_heads, C // self.num_heads
         ).permute(2, 0, 3, 1, 4)
-
-        q, k, v = torch.unbind(qkv, 0)
-        q = q * self.scale
+        
+        q, k, v = qkv[0] * self.scale, qkv[1], qkv[2]
         attn = q @ k.transpose(-2, -1)
+
+        q, k, v = qkv[0] * self.scale, qkv[1], qkv[2]
+        attn = q @ k.transpose(-2, -1)
+
         attn = self.attn_softmax(attn) # pre post module hook
         attn = self.attn_drop(attn)
         x = (attn @ v).transpose(1, 2).reshape(B, N, C)
