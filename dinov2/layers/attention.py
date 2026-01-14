@@ -50,8 +50,9 @@ class Attention(nn.Module):
         self.scale = head_dim**-0.5
 
         self.qkv = nn.Linear(dim, dim * 3, bias=qkv_bias)
-        self.attn_drop = attn_drop
+        self.attn_drop = nn.Dropout(attn_drop)
         self.proj = nn.Linear(dim, dim, bias=proj_bias)
+        self.attn_softmax = nn.Softmax(dim=-1)
         self.proj_drop = nn.Dropout(proj_drop)
 
     def init_weights(
@@ -68,13 +69,17 @@ class Attention(nn.Module):
 
     def forward(self, x: Tensor, is_causal: bool = False) -> Tensor:
         B, N, C = x.shape
-        qkv = self.qkv(x).reshape(B, N, 3, self.num_heads, C // self.num_heads)
-        q, k, v = torch.unbind(qkv, 2)
-        q, k, v = [t.transpose(1, 2) for t in [q, k, v]]
-        x = nn.functional.scaled_dot_product_attention(
-            q, k, v, attn_mask=None, dropout_p=self.attn_drop if self.training else 0, is_causal=is_causal
-        )
-        x = x.transpose(1, 2).contiguous().view(B, N, C)
+        qkv = self.qkv(x).reshape(
+            B, N, 3, self.num_heads, C // self.num_heads
+        ).permute(2, 0, 3, 1, 4)
+        
+        q, k, v = torch.unbind(qkv, 0)
+        q *= self.scale
+        attn = q @ k.transpose(-2, -1)
+        attn = self.attn_softmax(attn) # pre post module hook
+        attn = self.attn_drop(attn)
+        x = (attn @ v).transpose(1, 2).reshape(B, N, C)
+
         x = self.proj_drop(self.proj(x))
         return x
 
